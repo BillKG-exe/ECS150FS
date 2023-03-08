@@ -110,15 +110,14 @@ int fs_mount(const char *diskname)
   if(sys_error_check(file_size, diskname) == -1) return -1;
 
   /* Creates the FAT array with the corresponding size of elements */
-  file_system->fat_blocks = malloc(file_system->sp.fat_length *       
-                                  sizeof(uint16_t*));
+  file_system->fat_blocks = malloc(file_system->sp.fat_length * sizeof(uint16_t*));
 
   /* Go through FAT blocks and stores the data in the FAT array */
   for(int i = 1; i < file_system->sp.fat_length+1; i++) {
      block_read(i, &file_system->fat_blocks[i-1]);
   }
 
-  //Reads entire 128 entries of the root directori=y block int rootDirectores  
+  //Reads entire 128 entries of the root directory block into rootDirectores  
   block_read(file_system->sp.root_dir_index, &file_system->rootDirectores);
     
   return 0;
