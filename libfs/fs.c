@@ -11,6 +11,7 @@
 
 #define SUPERBLOCK_INDEX 0
 #define ROOT_DIR_ENTRY_SIZE 32
+#define ROOT_DIR_PADDING_SIZE 10
 
 struct superBlock {
   int8_t signature[FS_FILENAME_LEN];
@@ -25,6 +26,7 @@ struct root_dirs {
   int8_t filename[FS_FILENAME_LEN];
   int32_t file_size;
   int16_t file_first_index;
+  int8_t padding[ROOT_DIR_PADDING_SIZE];
 };
 
 struct fs_system {
@@ -94,6 +96,7 @@ int fs_mount(const char *diskname)
   }
 
   int success = !block_disk_open(diskname);
+  
   if(!success) {
     fprintf(stderr, "Failed to open disk\n");
     return -1;
@@ -106,31 +109,17 @@ int fs_mount(const char *diskname)
 
   if(sys_error_check(file_size, diskname) == -1) return -1;
 
-  char* root_block;
-
-  /* Reads the entire block for the root directory int root_block
-     buffer */
-  block_read(file_system->sp.root_dir_index, root_block);
-
   /* Creates the FAT array with the corresponding size of elements */
   file_system->fat_blocks = malloc(file_system->sp.fat_length *       
                                   sizeof(uint16_t*));
 
   /* Go through FAT blocks and stores the data in the FAT array */
   for(int i = 1; i < file_system->sp.fat_length+1; i++) {
-     block_read(i, &file_system->fat_blocks[i]);
+     block_read(i, &file_system->fat_blocks[i-1]);
   }
 
-  
-  /* 
-    Not quite sure about the logic we have to use to get the different
-    entries of the root directory.
-  */
-  for(int i = 0; i < BLOCK_SIZE; i+=ROOT_DIR_ENTRY_SIZE) {
-    char temp_buffer[ROOT_DIR_ENTRY_SIZE+1];
-    /* What logic should we apply?*/
-    //sscanf()
-  }
+  //Reads entire 128 entries of the root directori=y block int rootDirectores  
+  block_read(file_system->sp.root_dir_index, &file_system->rootDirectores);
     
   return 0;
 }
@@ -158,8 +147,8 @@ int fs_info(void)
   printf("Total Number of Blocks:    %d\n", file_system->sp.dsk_block_length);
   printf("Root Directory Index:      %d\n", file_system->sp.root_dir_index);
   printf("Data Block Index:          %d\n", file_system->sp.data_blck_index);
-  printf("Data Block Length          %d\n", file_system->sp.data_blck_length);
-  printf("Fat length                 %d\n", file_system->sp.fat_length);
+  printf("Data Block Length:         %d\n", file_system->sp.data_blck_length);
+  printf("Fat length:                %d\n", file_system->sp.fat_length);
   return 0;
 }
 
