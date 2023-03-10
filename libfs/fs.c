@@ -144,7 +144,7 @@ int fs_unmount(void)
 
   // Deallocate memory
   free(file_system->fat_blocks);
-
+  free(file_system);
   return 0;
 }
 
@@ -197,7 +197,6 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
   /* TODO: Phase 3 */
-  free(file_system);
   return 0;
 }
 
