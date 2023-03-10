@@ -10,6 +10,9 @@ all: $(targets)
 deps := $(pathsubst %.o,%.d,$(objs))
 -include $(deps)
 
+# -r if the library already exists, replace old files
+# -c create the library if it doesn't exist
+# -s create a sorted index of the library
 libfs.a: $(obs)
 	ar rcs $@ $^	
 
