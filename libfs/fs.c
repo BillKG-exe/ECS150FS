@@ -136,6 +136,7 @@ int fs_mount(const char *diskname)
 
 int fs_unmount(void)
 {
+  /* TODO: Phase 1 */
   /* Iterate through the data in the FAT array and write to the disk */
   for(int i = 1; i < file_system->sp.fat_length + 1; i++) {
      block_write(i, &file_system->fat_blocks[i - 1]);
@@ -143,7 +144,6 @@ int fs_unmount(void)
 
   // Deallocate memory
   free(file_system->fat_blocks);
-  free(file_system);
 
   return 0;
 }
@@ -153,7 +153,7 @@ int fs_info(void)
   /* TODO: Phase 1 */
 
   /* Returns -1 if file system was not mounted */
-  if(file_system == NULL) {
+  if (file_system == NULL) {
     fprintf(stderr, "Error: No file system mounted\n");
     return -1;
   }
@@ -197,6 +197,7 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
   /* TODO: Phase 3 */
+  free(file_system);
   return 0;
 }
 
