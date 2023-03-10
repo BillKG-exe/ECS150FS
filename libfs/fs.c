@@ -123,8 +123,8 @@ int fs_mount(const char *diskname)
   /* Creates the FAT array with the corresponding size of elements */
   file_system->fat_blocks = malloc(file_system->sp.fat_length * sizeof(uint16_t*));
 
-  /* Go through FAT blocks and store the data in the FAT array */
-  for(int i = 1; i < file_system->sp.fat_length+1; i++) {
+  /* Go through the FAT blocks and store the data in the FAT array */
+  for(int i = 1; i < file_system->sp.fat_length + 1; i++) {
      block_read(i, &file_system->fat_blocks[i-1]);
   }
 
@@ -134,9 +134,17 @@ int fs_mount(const char *diskname)
   return 0;
 }
 
-int fs_umount(void)
+int fs_unmount(void)
 {
-  /* TODO: Phase 1 */
+  /* Iterate through the data in the FAT array and write to the disk */
+  for(int i = 1; i < file_system->sp.fat_length + 1; i++) {
+     block_write(i, &file_system->fat_blocks[i - 1]);
+    }
+
+  // Deallocate memory
+  free(file_system->fat_blocks);
+  free(file_system);
+
   return 0;
 }
 
