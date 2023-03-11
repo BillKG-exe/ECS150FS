@@ -11,6 +11,7 @@
 /* TODO: Phase 1 */
 #define SUPERBLOCK_INDEX 0
 #define SUPERBLOCK_PADDING 4079
+#define ROOT_DIR_ARRAY_SIZE 128
 #define ROOT_DIR_ENTRY_SIZE 32
 #define ROOT_DIR_PADDING_SIZE 10
 #define VIRT_DISK_BLOCK_SIZE 4096
@@ -21,11 +22,11 @@
 // The first block of the disk and contains info about the filesystem
 struct superBlock {
     int8_t signature[FS_FILENAME_LEN];
-    int16_t dsk_block_length;
+    int16_t dsk_block_amount;
     int16_t root_dir_index;
     int16_t data_blck_index;
-    int16_t data_blck_length;
-    int8_t fat_length;
+    int16_t data_blck_amount;
+    int8_t fat_blk_amount;
     int8_t padding[SUPERBLOCK_PADDING];
 };
 
@@ -40,8 +41,8 @@ struct root_entry {
 // All information about the filesystem - superblock, FAT, and root directory
 struct fs_system {
     struct superBlock sp;
-    struct root_entry root_dir[FS_FILE_MAX_COUNT];
-    uint16_t *fat_blocks;
+    struct root_entry root_dir[ROOT_DIR_ARRAY_SIZE];
+    uint16_t* fat_blocks;
 };
 
 // Create file system struct pointer
@@ -63,13 +64,13 @@ int sys_error_check(int file_size, const char *diskname) {
     }
 
     /* Check if the total block size is correct */
-    if (blocks != file_system->sp.dsk_block_length) {
+    if (blocks != file_system->sp.dsk_block_amount) {
         fprintf(stderr, "Error: Disk Block Length is invalid\n");
         return -1;
     }
 
     /* Check if the FAT length is correct */
-    if (fat_count != file_system->sp.fat_length) {
+    if (fat_count != file_system->sp.fat_blk_amount) {
         fprintf(stderr, "Error: FAT Length is invalid\n");
         return -1;
     }
@@ -78,7 +79,7 @@ int sys_error_check(int file_size, const char *diskname) {
     int data_blck_len = blocks - (2 + fat_count);
 
     /* Check if the amount of data block matches that of the loaded disk */
-    if (data_blck_len != file_system->sp.data_blck_length) {
+    if (data_blck_len != file_system->sp.data_blck_amount) {
         fprintf(stderr, "Error: Data Block Length is invalid\n");
         return -1;
     }
@@ -128,10 +129,10 @@ int fs_mount(const char *diskname) {
     }
 
     /* Create the FAT array with the corresponding size of elements */
-    file_system->fat_blocks = malloc(file_system->sp.fat_length * sizeof(uint16_t * ));
+    file_system->fat_blocks = malloc(file_system->sp.fat_blk_amount * sizeof(uint16_t *));
 
     /* Go through the FAT blocks and store the data in the FAT array */
-    for (int i = 1; i < file_system->sp.fat_length + 1; i++) {
+    for (int i = 1; i < file_system->sp.fat_blk_amount + 1; i++) {
         block_read(i, &file_system->fat_blocks[i - 1]);
     }
 
@@ -147,14 +148,14 @@ int fs_unmount(void) {
     /* TODO: Phase 1 */
 
     // Persistent Storage - Write all FAT data out to the disk
-    for (int i = 2; i < file_system->sp.fat_length + 1; i++) {
+    for (int i = 2; i < file_system->sp.fat_blk_amount + 1; i++) {
         block_write(i, &file_system->fat_blocks[i - 1]);
     }
 
     // Persistent Storage - Write all root directory data out to the disk
     block_write(file_system->sp.root_dir_index, &file_system->root_dir);
 
-    // Deallocate memory
+    // Deallocate memory from mount function
     free(file_system->fat_blocks);
     free(file_system);
 
@@ -171,15 +172,14 @@ int fs_info(void) {
         return -1;
     }
 
-    printf("FILE SYSTEM IMFORMATION: \n");
-    printf("\n");
-
-    printf("File System Signature:     %s\n", file_system->sp.signature);
-    printf("Total Number of Blocks:    %d\n", file_system->sp.dsk_block_length);
-    printf("Root Directory Index:      %d\n", file_system->sp.root_dir_index);
-    printf("Data Block Index:          %d\n", file_system->sp.data_blck_index);
-    printf("Data Block Length:         %d\n", file_system->sp.data_blck_length);
-    printf("Fat length:                %d\n", file_system->sp.fat_length);
+    printf("FS Info: \n");
+    printf("total_blk_count=%s\n", file_system->sp.dsk_block_amount);
+    printf("fat_blk_count=%d\n", file_system->sp.fat_blk_amount);
+    printf("rdir_blk=%d\n", (file_system->root_dir.file_size)/VIRT_DISK_BLOCK_SIZE);
+    printf("data_blk%d\n", file_system->sp.data_blck_amount);
+//    printf("data_blk_count=%d\n", );
+    printf("fat_free_ratio=%d\n", (file_system->sp.fat_blk_amount)/(file_system->sp.padding));
+    printf("rdir_free_ratio=%d\n", ((file_system->root_dir.file_size)/VIRT_DISK_BLOCK_SIZE))/(file_system->sp.padding));
     return 0;
 }
 
