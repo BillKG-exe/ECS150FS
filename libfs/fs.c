@@ -147,11 +147,11 @@ int fs_unmount(void) {
     /* TODO: Phase 1 */
 
     // Persistent Storage - Write all FAT data out to the disk
-    for (int i = 1; i < file_system->sp.fat_length + 1; i++) {
+    for (int i = 2; i < file_system->sp.fat_length + 1; i++) {
         block_write(i, &file_system->fat_blocks[i - 1]);
     }
 
-    // Persistent Storage - Write all meta and file data out to the disk
+    // Persistent Storage - Write all root directory data out to the disk
     block_write(file_system->sp.root_dir_index, &file_system->root_dir);
 
     // Deallocate memory
