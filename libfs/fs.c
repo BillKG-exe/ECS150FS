@@ -9,6 +9,7 @@
 #include "fs.h"
 
 /** API Value Definitions **/
+#define FS_FILENAME_LEN 255
 #define SUPERBLOCK_INDEX 0
 #define SUPERBLOCK_PADDING 4079
 #define ROOT_DIR_ARRAY_SIZE 128
@@ -33,7 +34,7 @@ struct superBlock {
 // An entry in the root directory
 struct root_entry {
     int8_t filename[FS_FILENAME_LEN];
-    int32_t file_size;
+    int32_t file_size; // in bytes
     int16_t file_first_index;
     int8_t padding[ROOT_DIR_PADDING_SIZE];
 };
@@ -42,13 +43,15 @@ struct root_entry {
 struct fs_system {
     struct superBlock sp;
     struct root_entry root_dir[ROOT_DIR_ARRAY_SIZE];
+
+    // TODO: Is this the number of fat blocks?
     uint16_t* fat_blocks;
 };
 
 // Create file system struct pointer
 struct fs_system* file_system;
 
-// System error detection function
+// Verify super block data from mount function
 int sys_error_check(int file_size, const char *diskname) {
 
     /* Check if file signature matches the diskname */
@@ -59,37 +62,37 @@ int sys_error_check(int file_size, const char *diskname) {
         }
     }
 
-    /* Check if the total block size is correct */
-    // disk_blocks = the disk's block count from "block_disk_count()
+    /* Compare calculated disk block count to super block disk block count */
     int disk_blocks = block_disk_count();
     if (disk_blocks != file_system->sp.dsk_blck_amount) {
         fprintf(stderr, "Error: Disk Block Length is invalid\n");
         return -1;
     }
 
-    /* Check if the FAT length is correct */
+    /* Compare calculated fat block count to super block fat block count */
     int disk_fat_count = disk_blocks * 2 / BLOCK_SIZE;
     if (disk_fat_count != file_system->sp.fat_blck_amount) {
         fprintf(stderr, "Error: FAT Length is invalid\n");
         return -1;
     }
 
-    /* Calculate the amount of data blocks */
-    int data_blck_len = blocks - (2 + fat_count);
-
-    /* Check if the amount of data block matches that of the loaded disk */
-    if (data_blck_len != file_system->sp.data_blck_amount) {
+    /* Compare calculated data blocks to super block data block amount */
+    // Total blocks = fat blocks - 1 [super block] - 1 [root dir] - data blocks
+    int disk_data_blcks = disk_blocks - (2 + fat_count);
+    if (disk_data_blcks != file_system->sp.data_blck_amount) {
         fprintf(stderr, "Error: Data Block Length is invalid\n");
         return -1;
     }
 
-    /* Check if the index of the root directory is valid */
+    /* Compare calculated root dir index to super block root dir index */
+    // Root dir index = 1 [super block] + fat blocks
     if (fat_count + 1 != file_system->sp.root_dir_index) {
         fprintf(stderr, "Error: Root Directory index is invalid\n");
         return -1;
     }
 
-    /* Check if the index of the data block is valid */
+    /* Compare calculated data block index to super block data block index */
+    // Data block index = 1 [super block] + fat blocks + 1 [root dir]
     if (fat_count + 2 != file_system->sp.data_blck_index) {
         fprintf(stderr, "Error: Data Block index is invalid\n");
         return -1;
@@ -102,14 +105,14 @@ int sys_error_check(int file_size, const char *diskname) {
 int fs_mount(const char *diskname) {
     /* TODO: Phase 1 */
 
-    // Determine valid disk name length
+    // Verify valid disk name length
     int file_size = strlen(diskname);
-    if (file_size > FS_FILENAME_LEN || !file_size) {
+    if ((FS_FILENAME_LEN < file_size) || (!file_size)) {
         fprintf(stderr, "Invalid filename\n");
         return -1;
     }
 
-    // Attempt to open given disk
+    // Attempt to open disk
     int success = !block_disk_open(diskname);
     if (!success) {
         fprintf(stderr, "Failed to open disk\n");
@@ -119,11 +122,11 @@ int fs_mount(const char *diskname) {
     // Allocate memory for the filesystem struct
     file_system = malloc(sizeof(struct fs_system));
 
-    /* Read the first block and store the data in sp object */
+    /* Read the super block and store the data in sp struct */
     block_read(SUPERBLOCK_INDEX, &file_system->sp);
 
-    // Determine the validity of the superblock data
-    if (sys_error_check(file_size, diskname) == -1) {
+    // Verify super block data
+    if (sys_error_check(file_size, diskname)){
         return -1;
     }
 
@@ -196,7 +199,7 @@ int fs_info(void) {
     // Number of data blocks
     printf("data_blk_count=%d\n", file_system->sp.data_blk_amount);
 
-    /* TODO: Determine and Caluclate Ratios */
+    /* TODO: Determine and Calculate Ratios */
     printf("fat_free_ratio=%d\n", (file_system->sp.fat_blck_amount)/(file_system->sp.padding));
     printf("rdir_free_ratio=%d\n", ((file_system->root_dir.file_size)/BLOCK_SIZE))/(file_system->sp.padding));
     return 0;
@@ -285,11 +288,46 @@ int fs_create(const char *filename) {
 
 int fs_delete(const char *filename) {
     /* TODO: Phase 2 */
+
+    /**
+     * FAT entries that have a value of 0 are free to allocate
+     */
+
+    struct root_entry delete_file;
+    unsigned file_blck_size;
+
+    /** 1. Find filename to delete in the root directory **/
+    for (unsigned i = 0; i < ROOT_DIR_ARRAY_SIZE; i++) {
+        if (!strcmp(filename, file_system->root_dir[i])) {
+            delete_file = file_system->root_dir[i];
+
+            /** 2. Reset file Information **/
+            file_system->root_dir[i].file_size = 0;
+            file_system->root_dir[i].file_first_index = FAT_EOC;
+        }
+    }
+
+    /** 3. Follow block chain and remove data blocks from the FAT **/
+    // Abbreviated path to the FAT
+    struct superBlock* pFAT = file_system->fat_blocks;
+
+    // For each block of the file
+    int16_t current_index = delete_file.file_first_index;
+    int16_t next_index;
+    file_blck_size = delete_file.file_size / BLOCK_SIZE;
+    for (unsigned fileBkCount = 0; fileBkCount < file_blck_size; fileBkCount++) {
+        // TODO: Free or clear the data blocks
+        next_index = pFAT[current_index];
+        pFAT[current_index] = 0;
+        current_index = next_index;
+    }
     return 0;
 }
 
 int fs_ls(void) {
     /* TODO: Phase 2 */
+    printf("FS Ls:\n");
+
     for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
         char *entry_filename = (char *) file_system->root_dir[i].filename;
 
