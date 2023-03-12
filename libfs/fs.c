@@ -178,16 +178,17 @@ int fs_info(void) {
     printf("total_blk_count=%s\n", file_system->sp.dsk_blck_amount);
 
     // Fat block index
-    printf("fat_blk_count=%d\n", file_system->sp.);
+    unsigned fatBytes = file_system->sp.data_blck_amount * 2);
+    printf("fat_blk_count=%d\n", fatBytes / VIRT_DISK_BLOCK_SIZE);
 
     // Root directory index
-    printf("rdir_blk=%d\n", file_system->sp.root_dir_index;
+    printf("rdir_blk=%d\n", file_system->sp.root_dir_index);
 
     // Data block index
     printf("data_blk%d\n", file_system->sp.data_blck_index);
 
     // Number of data blocks
-    printf("data_blk_count=%d\n", file_system->sp..data_blk_amount);
+    printf("data_blk_count=%d\n", file_system->sp.data_blk_amount);
 
     /* TODO: Determine and Caluclate Ratios */
     printf("fat_free_ratio=%d\n", (file_system->sp.fat_blck_amount)/(file_system->sp.padding));
