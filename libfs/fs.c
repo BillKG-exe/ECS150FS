@@ -208,7 +208,7 @@ int fs_info(void) {
     return 0;
 }
 
-int isValidName(const char *filename) {
+bool isValidName(const char *filename) {
     int count = 0;
     bool isNullTerminated = false;
 
@@ -217,11 +217,11 @@ int isValidName(const char *filename) {
     if ((0 < fileLen) && (fileLen < FS_FILENAME_LEN)){
         if (fileName[fileLen - 1] == '\0'){
             isNullTerminated = true;
-            return 0;
+            return true;
         }
     } else {
         fprintf(stderr, "Filename is either too large or not null terminated\n");
-        return -1;
+        return false;
     }
 
 
@@ -253,7 +253,7 @@ int fs_create(const char *filename) {
     }
 
     /* Check if the provided filename is valid. If not then return -1 */
-    if (isValidName(filename) != 0) {
+    if (!isValidName(filename)) {
         return -1;
     }
 
