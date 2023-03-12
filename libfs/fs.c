@@ -9,7 +9,10 @@
 #include "fs.h"
 
 /** API Value Definitions **/
-#define FS_FILENAME_LEN 255
+#define DISK_NAME_MAX 255
+
+// A filename in the root directory is 16 bytes max
+#define FILE_NAME_MAX 16
 #define SUPERBLOCK_INDEX 0
 #define SUPERBLOCK_PADDING 4079
 #define ROOT_DIR_ARRAY_SIZE 128
@@ -33,7 +36,7 @@ struct superBlock {
 
 // An entry in the root directory
 struct root_entry {
-    int8_t filename[FS_FILENAME_LEN];
+    int8_t filename[FILE_NAME_MAX];
     int32_t file_size; // in bytes
     int16_t file_first_index;
     int8_t padding[ROOT_DIR_PADDING_SIZE];
@@ -106,8 +109,8 @@ int fs_mount(const char *diskname) {
     /* TODO: Phase 1 */
 
     // Verify valid disk name length
-    int file_size = strlen(diskname);
-    if ((FS_FILENAME_LEN < file_size) || (!file_size)) {
+    int diskNameLen = strlen(diskname);
+    if ((DISK_NAME_MAX < diskNameLen) || (!file_size)) {
         fprintf(stderr, "Invalid filename\n");
         return -1;
     }
@@ -209,23 +212,35 @@ int isValidName(const char *filename) {
     int count = 0;
     bool isNullTerminated = false;
 
-    /* Check it the filename string is null terminated */
-    /* and keep track of the character count of the string */
-    for (int i = 0; i < strlen(filename); i++) {
-        if (filename[i] == '\0') {
+    /* Verify the filename is null terminated and has a valid length */
+    unsigned fileLen = strlen(filename);
+    if ((0 < fileLen) && (fileLen < FS_FILENAME_LEN)){
+        if (fileName[fileLen - 1] == '\0'){
             isNullTerminated = true;
+            return 0;
         }
-        count++;
-    }
-
-    /* Returns -1 if the filename exceeds the filename limit size */
-    /* IReturns -1 if string is not null terminated  */
-    if (count > FS_FILENAME_LEN || !isNullTerminated) {
+    } else {
         fprintf(stderr, "Filename is either too large or not null terminated\n");
         return -1;
     }
 
-    return 0;
+
+    // Billy's Code
+//    for (int i = 0; i < strlen(filename); i++) {
+//        if (filename[i] == '\0') {
+//            isNullTerminated = true;
+//        }
+//        count++;
+//    }
+
+    /* Returns -1 if the filename exceeds the filename limit size */
+    /* IReturns -1 if string is not null terminated  */
+//    if (count > FS_FILENAME_LEN || !isNullTerminated) {
+//        fprintf(stderr, "Filename is either too large or not null terminated\n");
+//        return -1;
+//    }
+//
+//    return 0;
 }
 
 int fs_create(const char *filename) {
@@ -259,7 +274,7 @@ int fs_create(const char *filename) {
             return -1;
         }
 
-        /* if the entry filename is empty assign the index of that entry to
+        /* Check if the entry filename is empty assign the index of that entry to
             free_entry_index.*/
         if (entry_filename == '\0') {
             free_entry_index = i;
