@@ -12,12 +12,14 @@
 #define DISK_NAME_MAX 255
 
 // A filename in the root directory is 16 bytes max
+#define FILE_NAME_MAX 16
 #define SUPERBLOCK_INDEX 0
 #define SUPERBLOCK_PADDING 4079
+#define ROOT_DIR_ARRAY_SIZE 128
 #define ROOT_DIR_ENTRY_SIZE 32
 #define ROOT_DIR_PADDING_SIZE 10
+#define BLOCK_SIZE 4096
 #define FAT_EOC -1
-#define FILE_DESCRIPTOR_TABLE_SIZE 32
 
 /* TODO: Attach the attribute "packed" to these data structs */
 
@@ -34,7 +36,7 @@ struct superBlock {
 
 // An entry in the root directory
 struct root_entry {
-    int8_t filename[FS_FILENAME_LEN];
+    int8_t filename[FILE_NAME_MAX];
     int32_t file_size; // in bytes
     int16_t file_first_index;
     int8_t padding[ROOT_DIR_PADDING_SIZE];
@@ -43,25 +45,14 @@ struct root_entry {
 // All information about the filesystem - super block, FAT, and root directory
 struct fs_system {
     struct superBlock sp;
-    struct root_entry root_dir[FS_FILE_MAX_COUNT];
+    struct root_entry root_dir[ROOT_DIR_ARRAY_SIZE];
 
     // TODO: Is this the number of fat blocks?
     uint16_t* fat_blocks;
 };
 
-struct fd_table_entry {
-    char filename[FS_FILENAME_LEN];
-    size_t offset;
-};
-
 // Create file system struct pointer
 struct fs_system* file_system;
-
-/* Table of file descriptors */
-struct fd_table_entry fd_table[FILE_DESCRIPTOR_TABLE_SIZE];
-
-/* Keeps track of numbers of open files */
-int fd_open_count = 0;
 
 // Verify super block data from mount function
 int sys_error_check(int file_size, const char *diskname) {
@@ -325,7 +316,7 @@ int fs_delete(const char *filename) {
     unsigned file_blck_size;
 
     /** 1. Find filename to delete in the root directory **/
-    for (unsigned i = 0; i < FS_FILE_MAX_COUNT; i++) {
+    for (unsigned i = 0; i < ROOT_DIR_ARRAY_SIZE; i++) {
         if (!strcmp(filename, file_system->root_dir[i].filename)) {
             delete_file = file_system->root_dir[i];
 
@@ -370,105 +361,23 @@ int fs_ls(void) {
 
 int fs_open(const char *filename) {
     /* TODO: Phase 3 */
-    if(file_system == NULL) {
-        fprintf(stderr, "No file system mounted\n");
-        return -1;
-    }
-
-    if(!isValidName(filename)) {
-        fprintf(stderr, "Invalid filename\n");
-        return -1;
-    }
-
-    if(fd_open_count == FILE_DESCRIPTOR_TABLE_SIZE) {
-        fprintf(stderr, "File descriptor table is full\n");
-        return -1;
-    }
-
-    bool exist = false;
-
-    for(int i = 0; i < FS_FILE_MAX_COUNT; i++) {
-        if(strcmp((char*)file_system->root_dir[i].filename, filename) == 0) {
-            exist = true;
-            break;
-        }
-    }
-
-    if(!exist) {
-        fprintf(stderr, "ERROR: File does not exits\n");
-        return -1;
-    }
-
-    strncpy(fd_table[fd_open_count].filename, filename, strlen(filename));
-    fd_table[fd_open_count].offset = 0;
-    fd_open_count++;
     
-    return fd_open_count-1;
-}
-
-int isvalidFD(int fd) {
-    if(file_system == NULL) {
-        fprintf(stderr, "No file system mounted\n");
-        return -1;
-    }
-
-    if(fd < 0 || fd >= FILE_DESCRIPTOR_TABLE_SIZE) {
-        fprintf(stderr, "Invalid file descriptor\n");
-        return -1;
-    }
-
-    if(strlen(fd_table[fd].filename) == 0) {
-        fprintf(stderr, "Current file descriptor was not opened\n");
-        return -1;
-    }
-
     return 0;
 }
 
 int fs_close(int fd) {
     /* TODO: Phase 3 */
-    //free(file_system);
-    int isValid = !isvalidFD(fd);
-
-    if(!isValid) return -1;
-
-    memset(fd_table[fd].filename, 0, sizeof(char));
-    fd_table[fd].offset = 0;
-
+    free(file_system);
     return 0;
 }
 
 int fs_stat(int fd) {
     /* TODO: Phase 3 */
-    int isValid = !isvalidFD(fd);
-
-    if(!isValid) return -1;
-
-    for(int i = 0; i < FS_FILE_MAX_COUNT; i++) {
-        char* root_entry_fname = (char*)file_system->root_dir[i].filename;
-        if(strcmp(fd_table[fd].filename, root_entry_fname) == 0) {
-            return file_system->root_dir[i].file_size;
-        }
-    }
-
-    /* Should not normally reach this section */
-    fprintf(stderr, "The file does not exist\n");
     return 0;
 }
 
 int fs_lseek(int fd, size_t offset) {
     /* TODO: Phase 3 */
-    int isValid = !isvalidFD(fd);
-
-    if(!isValid) return -1;
-
-    if(offset > fs_stat(fd)) {
-        fprintf(stderr, "Offset exceeds file size\n");
-        return -1;
-    }
-
-    fd_table[fd].offset = offset;
-
     return 0;
 }
 
