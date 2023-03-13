@@ -11,12 +11,15 @@
 /** API Value Definitions **/
 #define DISK_NAME_MAX 255
 
-// A filename in the root directory is 16 bytes max
-#define FILE_NAME_MAX 16
+/** Maximum filename length (including the NULL character) */
+#define FS_FILENAME_LEN 16
 #define SUPERBLOCK_INDEX 0
 #define SUPERBLOCK_PADDING 4079
-#define ROOT_DIR_ARRAY_SIZE 128
-#define ROOT_DIR_ENTRY_SIZE 32
+
+/** Maximum number of files in the root directory */
+#define FS_FILE_MAX_COUNT 128
+/** Maximum number of open files */
+#define FS_OPEN_MAX_COUNT 32
 #define ROOT_DIR_PADDING_SIZE 10
 #define BLOCK_SIZE 4096
 #define FAT_SIZE 32
@@ -47,7 +50,7 @@ struct root_entry {
 // All information about the filesystem - super block, FAT, and root directory
 struct fs_system {
     struct superBlock sp;
-    struct root_entry root_dir[ROOT_DIR_ARRAY_SIZE];
+    struct root_entry root_dir[FS_FILE_MAX_COUNT];
 
     // Array of FAT blocks each holding 256 16-byte entries
     uint16_t* fat_blocks;
@@ -139,6 +142,11 @@ int fs_mount(const char *diskname) {
     }
 
     /* Create the FAT array with the corresponding size of elements */
+    unsigned blocks = file_system->sp.fat_blck_amount;
+    unsigned entries = BLOCK_SIZE / 2
+    for (unsigned blkCount = 0; blkCount < file_system->sp.fat_blck_amount; blkCount++){
+
+    }
     file_system->fat_blocks = malloc(file_system->sp.fat_blck_amount * sizeof(uint16_t *));
 
     /* Go through the FAT blocks and store the data in the FAT array */
@@ -263,7 +271,7 @@ int fs_create(const char *filename) {
     }
 
     // Search for already existing filename
-    for (unsigned entry = 0; entry < ROOT_DIR_ARRAY_SIZE; entry++){
+    for (unsigned entry = 0; entry < FS_FILE_MAX_COUNT; entry++){
         if (!strcmp(file_system->root_dir[entry].filename, filename)){
             fprintf(stderr, "The name %s is already taken.\n", filename);
             return -1;
@@ -271,7 +279,7 @@ int fs_create(const char *filename) {
     }
 
     // Find the next open root dir entry and initialize root entry values
-    for (unsigned fileIndex = 0; fileIndex < ROOT_DIR_ARRAY_SIZE; fileIndex++){
+    for (unsigned fileIndex = 0; fileIndex < FS_FILE_MAX_COUNT; fileIndex++){
         if (file_system->root_dir[fileIndex].isEmpty){
             file_system->root_dir[fileIndex].filename = filename;
             file_system->root_dir[fileIndex].file_size = 0;
@@ -337,7 +345,7 @@ int fs_delete(const char *filename) {
     unsigned file_blck_size;
 
     /** 1. Find filename to delete in the root directory **/
-    for (unsigned i = 0; i < ROOT_DIR_ARRAY_SIZE; i++) {
+    for (unsigned i = 0; i < FS_FILE_MAX_COUNT; i++) {
         if (!strcmp(filename, file_system->root_dir[i])) {
             delete_file = file_system->root_dir[i];
 
