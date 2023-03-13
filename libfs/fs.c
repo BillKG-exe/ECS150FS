@@ -52,7 +52,7 @@ struct fs_system {
     struct superBlock sp;
     struct root_entry root_dir[FS_FILE_MAX_COUNT];
 
-    // Array of FAT blocks each holding 256 16-byte entries
+    // Pointer to an array of FAT blocks each holding 256 16-byte entries
     uint16_t* fat_blocks;
 };
 
@@ -143,13 +143,14 @@ int fs_mount(const char *diskname) {
 
     /* Create the FAT array with the corresponding size of elements */
     unsigned blocks = file_system->sp.fat_blck_amount;
-    unsigned entries = BLOCK_SIZE / 2
-    for (unsigned blkCount = 0; blkCount < file_system->sp.fat_blck_amount; blkCount++){
-
-    }
-    file_system->fat_blocks = malloc(file_system->sp.fat_blck_amount * sizeof(uint16_t *));
+    // The number of FAT block entries is block size / bytes per entry
+    // Each entry in the FAT is 16-bits wide (2 bytes)
+    unsigned entries = BLOCK_SIZE / 2;
+    // Calloc allocates memory and sets memory to 0
+    file_system->fat_blocks = calloc((blocks * entries) * sizeof(uint16_t));
 
     /* Go through the FAT blocks and store the data in the FAT array */
+    // TODO: Why doesn't the for loop start at 0?
     for (int i = 1; i < file_system->sp.fat_blck_amount + 1; i++) {
         block_read(i, &file_system->fat_blocks[i - 1]);
     }
@@ -166,8 +167,8 @@ int fs_unmount(void) {
     /* TODO: Phase 1 */
 
     // Persistent Storage - Write all FAT data out to the disk
-    for (int i = 2; i < file_system->sp.fat_blck_amount + 1; i++) {
-        block_write(i, &file_system->fat_blocks[i - 1]);
+    for (unsigned fatBlk = 0; fatBlk < file_system->sp.fat_blck_amount; fatBlk++) {
+        block_write(fatBlk, &file_system->fat_blocks[fatBlk]);
     }
 
     // Persistent Storage - Write all root directory data out to the disk
