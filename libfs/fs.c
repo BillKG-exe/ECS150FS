@@ -57,6 +57,7 @@ struct fs_system {
     uint16_t* fat_blocks;
 };
 
+// An entry in the file descriptor table
 struct fd_table_entry {
     char filename[FS_FILENAME_LEN];
     size_t offset;
@@ -375,7 +376,8 @@ int fs_open(const char *filename) {
         }
     }
 
-    strncpy(fd_table[fd_open_count].filename, filename, strlen(filename));
+    // Assign values to new entry in the FD table
+    strcpy(fd_table[fd_open_count].filename, filename);
     fd_table[fd_open_count].offset = 0;
     fd_open_count++;
 
