@@ -61,6 +61,7 @@ struct fs_system {
 struct fd_table_entry {
     char filename[FS_FILENAME_LEN];
     size_t offset;
+    bool used;
 };
 
 /** Global Variables **/
@@ -379,6 +380,7 @@ int fs_open(const char *filename) {
     // Assign values to new entry in the FD table
     strcpy(fd_table[fd_open_count].filename, filename);
     fd_table[fd_open_count].offset = 0;
+    fd_table[fd_open_count].used = true;
     fd_open_count++;
 
     return fd_open_count - 1;
@@ -405,15 +407,15 @@ bool isValidFD(int fd){
 
 int fs_close(int fd) {
     /* TODO: Phase 3 */
-    bool isValid = isvalidFD(fd);
 
-    if (!isValid){
+    if (!isvalidFD(fd)){
         return -1;
     }
 
     // memset() - Copies an unsigned char to the first n characters of a string
     memset(fd_table[fd].filename, 0, sizeof(char));
     fd_table[fd].offset = 0;
+    fd_table[fd].used = false;
 
     return 0;
 }
@@ -421,11 +423,9 @@ int fs_close(int fd) {
 int fs_stat(int fd) {
     /* TODO: Phase 3 */
 
-    int isValid = !isvalidFD(fd);
+    if (!isvalidFD(fd)) return -1;
 
-    if(!isValid) return -1;
-
-    for(int i = 0; i < FS_FILE_MAX_COUNT; i++) {
+    for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
         char* root_entry_fname = (char*)file_system->root_dir[i].filename;
         if(strcmp(fd_table[fd].filename, root_entry_fname) == 0) {
             return file_system->root_dir[i].file_size;
@@ -441,9 +441,9 @@ int fs_lseek(int fd, size_t offset) {
     /* TODO: Phase 3 */
     int isValid = !isvalidFD(fd);
 
-    if(!isValid) return -1;
+    if (!isValid) return -1;
 
-    if(offset > fs_stat(fd)) {
+    if (offset > fs_stat(fd)) {
         fprintf(stderr, "Offset exceeds file size\n");
         return -1;
     }
