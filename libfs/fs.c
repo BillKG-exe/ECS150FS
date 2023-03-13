@@ -9,11 +9,12 @@
 #include "fs.h"
 
 /** API Value Definitions **/
-#define DISK_NAME_MAX 255
+#define SIGNATURE_MAX 8
 
 /** Maximum filename length (including the NULL character) */
 #define FS_FILENAME_LEN 16
 #define SUPERBLOCK_INDEX 0
+#define FAT_INDEX 1
 #define SUPERBLOCK_PADDING 4079
 
 /** Maximum number of files in the root directory */
@@ -29,7 +30,7 @@
 
 // The first block of the disk and contains info about the filesystem
 struct superBlock {
-    int8_t signature[FS_FILENAME_LEN];
+    int8_t signature[SIGNATURE_MAX];
     int16_t dsk_blck_amount;
     int16_t root_dir_index;
     int16_t data_blck_index;
@@ -40,7 +41,7 @@ struct superBlock {
 
 // An entry in the root directory
 struct root_entry {
-    int8_t filename[FILE_NAME_MAX];
+    int8_t filename[FS_FILENAME_LEN];
     int32_t file_size; // in bytes
     int16_t file_first_index;
     int8_t padding[ROOT_DIR_PADDING_SIZE];
@@ -56,11 +57,20 @@ struct fs_system {
     uint16_t* fat_blocks;
 };
 
+struct fd_table_entry {
+    char filename[FS_FILENAME_LEN];
+    size_t offset;
+};
+
 /** Global Variables **/
 // Create file system struct pointer
 struct fs_system* file_system;
 
-unsigned
+/* Table of file descriptors */
+struct fd_table_entry fd_table[FILE_DESCRIPTOR_TABLE_SIZE];
+
+/* Keeps track of numbers of open files */
+int fd_open_count = 0;
 
 // Verify super block data from mount function
 int sys_error_check(int file_size, const char *diskname) {
@@ -89,7 +99,7 @@ int sys_error_check(int file_size, const char *diskname) {
 
     /* Compare calculated data blocks to super block data block amount */
     // Total blocks = fat blocks - 1 [super block] - 1 [root dir] - data blocks
-    int disk_data_blcks = disk_blocks - (2 + fat_count);
+    int disk_data_blcks = disk_blocks - (2 + disk_fat_count);
     if (disk_data_blcks != file_system->sp.data_blck_amount) {
         fprintf(stderr, "Error: Data Block Length is invalid\n");
         return -1;
@@ -97,14 +107,14 @@ int sys_error_check(int file_size, const char *diskname) {
 
     /* Compare calculated root dir index to super block root dir index */
     // Root dir index = 1 [super block] + fat blocks
-    if (fat_count + 1 != file_system->sp.root_dir_index) {
+    if (disk_fat_count + 1 != file_system->sp.root_dir_index) {
         fprintf(stderr, "Error: Root Directory index is invalid\n");
         return -1;
     }
 
     /* Compare calculated data block index to super block data block index */
     // Data block index = 1 [super block] + fat blocks + 1 [root dir]
-    if (fat_count + 2 != file_system->sp.data_blck_index) {
+    if (disk_fat_count + 2 != file_system->sp.data_blck_index) {
         fprintf(stderr, "Error: Data Block index is invalid\n");
         return -1;
     }
@@ -142,17 +152,17 @@ int fs_mount(const char *diskname) {
     }
 
     /* Create the FAT array with the corresponding size of elements */
-    unsigned blocks = file_system->sp.fat_blck_amount;
     // The number of FAT block entries is block size / bytes per entry
     // Each entry in the FAT is 16-bits wide (2 bytes)
+    unsigned blocks = file_system->sp.fat_blck_amount;
     unsigned entries = BLOCK_SIZE / 2;
-    // Calloc allocates memory and sets memory to 0
+
+    // Calloc() allocates memory and sets memory to 0
     file_system->fat_blocks = calloc((blocks * entries) * sizeof(uint16_t));
 
     /* Go through the FAT blocks and store the data in the FAT array */
-    // TODO: Why doesn't the for loop start at 0?
-    for (int i = 1; i < file_system->sp.fat_blck_amount + 1; i++) {
-        block_read(i, &file_system->fat_blocks[i - 1]);
+    for (int i = 0; i < file_system->sp.fat_blck_amount; i++) {
+        block_read((FAT_INDEX + i), &file_system->fat_blocks[i]);
     }
 
     // Read root directory block and write into root_entries
@@ -167,8 +177,8 @@ int fs_unmount(void) {
     /* TODO: Phase 1 */
 
     // Persistent Storage - Write all FAT data out to the disk
-    for (unsigned fatBlk = 0; fatBlk < file_system->sp.fat_blck_amount; fatBlk++) {
-        block_write(fatBlk, &file_system->fat_blocks[fatBlk]);
+    for (int fatBlk = 0; fatBlk < file_system->sp.fat_blck_amount; fatBlk++) {
+        block_write((FAT_INDEX + fatBlk), &file_system->fat_blocks[fatBlk]);
     }
 
     // Persistent Storage - Write all root directory data out to the disk
@@ -237,24 +247,6 @@ bool isValidName(const char *filename) {
         fprintf(stderr, "Filename is either too large or not null terminated\n");
         return false;
     }
-
-
-    // Billy's Code
-//    for (int i = 0; i < strlen(filename); i++) {
-//        if (filename[i] == '\0') {
-//            isNullTerminated = true;
-//        }
-//        count++;
-//    }
-
-    /* Returns -1 if the filename exceeds the filename limit size */
-    /* IReturns -1 if string is not null terminated  */
-//    if (count > FS_FILENAME_LEN || !isNullTerminated) {
-//        fprintf(stderr, "Filename is either too large or not null terminated\n");
-//        return -1;
-//    }
-//
-//    return 0;
 }
 
 int fs_create(const char *filename) {
@@ -280,8 +272,10 @@ int fs_create(const char *filename) {
     }
 
     // Find the next open root dir entry and initialize root entry values
+    bool foundFreeEntry = false;
     for (unsigned fileIndex = 0; fileIndex < FS_FILE_MAX_COUNT; fileIndex++){
         if (file_system->root_dir[fileIndex].isEmpty){
+            foundFreeEntry = true;
             file_system->root_dir[fileIndex].filename = filename;
             file_system->root_dir[fileIndex].file_size = 0;
             file_system->root_dir[fileIndex].file_first_index = FAT_EOC;
@@ -290,47 +284,10 @@ int fs_create(const char *filename) {
         }
     }
 
-// Billy's Code
-//    /* Index of the free entry in the root directory */
-//    int free_entry_index = -1;
-//    /* Temporary variable to hold the filename of the different entries
-//       in the root directory */
-//    char *entry_filename;
-//
-//    for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
-//        /* Converts the int8_t filename array to an array of characters */
-//        entry_filename = (char *) file_system->root_dir[i].filename;
-//
-//        /* Compare the different entries filename of the root directory with
-//        provided filename. Return -1 if the filename matches one of the entries  */
-//        if (strcmp(filename, entry_filename) == 0) {
-//            fprintf(stderr, "File already exist in the system\n");
-//            return -1;
-//        }
-//
-//        /* Check if the entry filename is empty assign the index of that entry to
-//            free_entry_index.*/
-//        if (entry_filename == '\0') {
-//            free_entry_index = i;
-//            break;
-//        }
-//
-//        /* Clean entry_filename before being reused */
-//        memset(entry_filename, 0, sizeof(char));
-//    }
-//
-//    if (free_entry_index != -1) {
-//        for (int i = 0; i < strlen(filename); i++) {
-//            /* Convert each character of filename to int8_t */
-//            file_system->root_dir[free_entry_index].filename[i] = (int8_t) filename[i];
-//        }
-//
-//        file_system->root_dir[free_entry_index].file_size = 0;
-//        file_system->root_dir[free_entry_index].file_first_index = FAT_EOC;
-//    } else {
-//        fprintf(stderr, "Root directory contains maximum number of file, 128.\n");
-//        return -1;
-//    }
+    if (!foundFreeEntry){
+        fprintf(stderr, "Root directory contains maximum number of file, 128.\n");
+        return -1;
+    }
 
     return 0;
 }
@@ -347,7 +304,7 @@ int fs_delete(const char *filename) {
 
     /** 1. Find filename to delete in the root directory **/
     for (unsigned i = 0; i < FS_FILE_MAX_COUNT; i++) {
-        if (!strcmp(filename, file_system->root_dir[i])) {
+        if (!strcmp(filename, file_system->root_dir[i].filename)) {
             delete_file = file_system->root_dir[i];
 
             /** 2. Reset file Information **/
@@ -366,7 +323,6 @@ int fs_delete(const char *filename) {
     int16_t next_index;
     file_blck_size = delete_file.file_size / BLOCK_SIZE;
     for (unsigned fileBkCount = 0; fileBkCount < file_blck_size; fileBkCount++) {
-        // TODO: Free or clear the data blocks
         next_index = pFAT[current_index];
         pFAT[current_index] = 0;
         current_index = next_index;
@@ -392,22 +348,107 @@ int fs_ls(void) {
 
 int fs_open(const char *filename) {
     /* TODO: Phase 3 */
+
+    if (file_system == NULL) {
+        fprintf(stderr, "No file system mounted\n");
+        return -1;
+    }
+
+    if (!isValidName(filename)) {
+        fprintf(stderr, "Invalid filename\n");
+        return -1;
+    }
+
+    if (fd_open_count == FILE_DESCRIPTOR_TABLE_SIZE) {
+        fprintf(stderr, "File descriptor table is full\n");
+        return -1;
+    }
+
+    bool exist = false;
+
+    for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
+        if(strcmp((char*)file_system->root_dir[i].filename, filename) == 0) {
+            exist = true;
+            break;
+        }
+    }
+
+    if (!exist) {
+        fprintf(stderr, "ERROR: File does not exits\n");
+        return -1;
+    }
+
+    strncpy(fd_table[fd_open_count].filename, filename, strlen(filename));
+    fd_table[fd_open_count].offset = 0;
+    fd_open_count++;
+
+    return fd_open_count - 1;
+}
+
+int isValidFD(int fd){
+    if(file_system == NULL) {
+        fprintf(stderr, "No file system mounted\n");
+        return -1;
+    }
+
+    if (fd < 0 || fd >= FILE_DESCRIPTOR_TABLE_SIZE) {
+        fprintf(stderr, "Invalid file descriptor\n");
+        return -1;
+    }
+
+    if (strlen(fd_table[fd].filename) == 0) {
+        fprintf(stderr, "Current file descriptor was not opened\n");
+        return -1;
+    }
+
     return 0;
 }
 
 int fs_close(int fd) {
     /* TODO: Phase 3 */
-    free(file_system);
+    //free(file_system);
+    int isValid = !isvalidFD(fd);
+
+    if(!isValid) return -1;
+
+    memset(fd_table[fd].filename, 0, sizeof(char));
+    fd_table[fd].offset = 0;
+
     return 0;
 }
 
 int fs_stat(int fd) {
     /* TODO: Phase 3 */
+
+    int isValid = !isvalidFD(fd);
+
+    if(!isValid) return -1;
+
+    for(int i = 0; i < FS_FILE_MAX_COUNT; i++) {
+        char* root_entry_fname = (char*)file_system->root_dir[i].filename;
+        if(strcmp(fd_table[fd].filename, root_entry_fname) == 0) {
+            return file_system->root_dir[i].file_size;
+        }
+    }
+
+    /* Should not normally reach this section */
+    fprintf(stderr, "The file does not exist\n");
     return 0;
 }
 
 int fs_lseek(int fd, size_t offset) {
     /* TODO: Phase 3 */
+    int isValid = !isvalidFD(fd);
+
+    if(!isValid) return -1;
+
+    if(offset > fs_stat(fd)) {
+        fprintf(stderr, "Offset exceeds file size\n");
+        return -1;
+    }
+
+    fd_table[fd].offset = offset;
+
     return 0;
 }
 
