@@ -40,6 +40,7 @@ struct root_entry {
     int32_t file_size; // in bytes
     int16_t file_first_index;
     int8_t padding[ROOT_DIR_PADDING_SIZE];
+    bool isEmpty;
 };
 
 // All information about the filesystem - super block, FAT, and root directory
@@ -47,12 +48,15 @@ struct fs_system {
     struct superBlock sp;
     struct root_entry root_dir[ROOT_DIR_ARRAY_SIZE];
 
-    // TODO: Is this the number of fat blocks?
+    // Array of FAT blocks each holding 256 16-byte entries
     uint16_t* fat_blocks;
 };
 
+/** Global Variables **/
 // Create file system struct pointer
 struct fs_system* file_system;
+
+unsigned
 
 // Verify super block data from mount function
 int sys_error_check(int file_size, const char *diskname) {
@@ -246,57 +250,77 @@ bool isValidName(const char *filename) {
 int fs_create(const char *filename) {
     /* TODO: Phase 2 */
 
-    /* Check if the file system was mounted. If not then return -1. */
+    /* Verify file system is mounted */
     if (file_system == NULL) {
         fprintf(stderr, "File System not mounted\n");
         return -1;
     }
 
-    /* Check if the provided filename is valid. If not then return -1 */
+    /* Verify valid filename length */
     if (!isValidName(filename)) {
         return -1;
     }
 
-    /* Index of the free entry in the root directory */
-    int free_entry_index = -1;
-    /* Temporary variable to hold the filename of the different entries
-       in the root directory */
-    char *entry_filename;
-
-    for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
-        /* Converts the int8_t filename array to an array of characters */
-        entry_filename = (char *) file_system->root_dir[i].filename;
-
-        /* Compare the different entries filename of the root directory with
-        provided filename. Return -1 if the filename matches one of the entires'  */
-        if (strcmp(filename, entry_filename) == 0) {
-            fprintf(stderr, "File already exist in the system\n");
+    // Search for already existing filename
+    for (unsigned entry = 0; entry < ROOT_DIR_ARRAY_SIZE; entry++){
+        if (!strcmp(file_system->root_dir[entry].filename, filename)){
+            fprintf(stderr, "The name %s is already taken.\n", filename);
             return -1;
         }
-
-        /* Check if the entry filename is empty assign the index of that entry to
-            free_entry_index.*/
-        if (entry_filename == '\0') {
-            free_entry_index = i;
-            break;
-        }
-
-        /* Clean entry_filename before being reused */
-        memset(entry_filename, 0, sizeof(char));
     }
 
-    if (free_entry_index != -1) {
-        for (int i = 0; i < strlen(filename); i++) {
-            /* Convert each character of filename to int8_t */
-            file_system->root_dir[free_entry_index].filename[i] = (int8_t) filename[i];
+    // Find the next open root dir entry and initialize root entry values
+    for (unsigned fileIndex = 0; fileIndex < ROOT_DIR_ARRAY_SIZE; fileIndex++){
+        if (file_system->root_dir[fileIndex].isEmpty){
+            file_system->root_dir[fileIndex].filename = filename;
+            file_system->root_dir[fileIndex].file_size = 0;
+            file_system->root_dir[fileIndex].file_first_index = FAT_EOC;
+            file_system->root_dir[fileIndex].padding = BLOCK_SIZE;
+            file_system->root_dir[fileIndex].isEmpty = false;
         }
-
-        file_system->root_dir[free_entry_index].file_size = 0;
-        file_system->root_dir[free_entry_index].file_first_index = FAT_EOC;
-    } else {
-        fprintf(stderr, "Root directory contains maximum number of file, 128.\n");
-        return -1;
     }
+
+// Billy's Code
+//    /* Index of the free entry in the root directory */
+//    int free_entry_index = -1;
+//    /* Temporary variable to hold the filename of the different entries
+//       in the root directory */
+//    char *entry_filename;
+//
+//    for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
+//        /* Converts the int8_t filename array to an array of characters */
+//        entry_filename = (char *) file_system->root_dir[i].filename;
+//
+//        /* Compare the different entries filename of the root directory with
+//        provided filename. Return -1 if the filename matches one of the entries  */
+//        if (strcmp(filename, entry_filename) == 0) {
+//            fprintf(stderr, "File already exist in the system\n");
+//            return -1;
+//        }
+//
+//        /* Check if the entry filename is empty assign the index of that entry to
+//            free_entry_index.*/
+//        if (entry_filename == '\0') {
+//            free_entry_index = i;
+//            break;
+//        }
+//
+//        /* Clean entry_filename before being reused */
+//        memset(entry_filename, 0, sizeof(char));
+//    }
+//
+//    if (free_entry_index != -1) {
+//        for (int i = 0; i < strlen(filename); i++) {
+//            /* Convert each character of filename to int8_t */
+//            file_system->root_dir[free_entry_index].filename[i] = (int8_t) filename[i];
+//        }
+//
+//        file_system->root_dir[free_entry_index].file_size = 0;
+//        file_system->root_dir[free_entry_index].file_first_index = FAT_EOC;
+//    } else {
+//        fprintf(stderr, "Root directory contains maximum number of file, 128.\n");
+//        return -1;
+//    }
 
     return 0;
 }
@@ -319,6 +343,7 @@ int fs_delete(const char *filename) {
             /** 2. Reset file Information **/
             file_system->root_dir[i].file_size = 0;
             file_system->root_dir[i].file_first_index = FAT_EOC;
+            file_system->root_dir[i].isEmpty = true;
         }
     }
 
