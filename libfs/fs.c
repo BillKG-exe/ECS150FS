@@ -69,8 +69,8 @@ struct fs_system* file_system;
 /* Table of file descriptors */
 struct fd_table_entry fd_table[FILE_DESCRIPTOR_TABLE_SIZE];
 
-/* Keeps track of numbers of open files */
-int fd_open_count = 0;
+/* Counts the number of open files */
+unsigned fd_open_count = 0;
 
 // Verify super block data from mount function
 int sys_error_check(int file_size, const char *diskname) {
@@ -224,7 +224,7 @@ int fs_info(void) {
     printf("data_blk%d\n", file_system->sp.data_blck_index);
 
     // Number of data blocks
-    printf("data_blk_count=%d\n", file_system->sp.data_blk_amount);
+    printf("data_blk_count=%d\n", file_system->sp.data_blck_amount);
 
     /* TODO: Determine and Calculate Ratios */
     printf("fat_free_ratio=%d\n", (file_system->sp.fat_blck_amount)/(file_system->sp.padding));
@@ -349,33 +349,30 @@ int fs_ls(void) {
 int fs_open(const char *filename) {
     /* TODO: Phase 3 */
 
+    // Verifies if a file system has been mounted
     if (file_system == NULL) {
         fprintf(stderr, "No file system mounted\n");
         return -1;
     }
 
+    // Verifies valid filename
     if (!isValidName(filename)) {
         fprintf(stderr, "Invalid filename\n");
         return -1;
     }
 
+    // Determines if the FD table is full
     if (fd_open_count == FILE_DESCRIPTOR_TABLE_SIZE) {
         fprintf(stderr, "File descriptor table is full\n");
         return -1;
     }
 
-    bool exist = false;
-
+    // Determines if the file exists
     for (int i = 0; i < FS_FILE_MAX_COUNT; i++) {
-        if(strcmp((char*)file_system->root_dir[i].filename, filename) == 0) {
-            exist = true;
-            break;
+        if (!strcmp(file_system->root_dir[i].filename, filename)) {
+            fprintf(stderr, "ERROR: File does not exist. Cannot open.\n");
+            return -1;
         }
-    }
-
-    if (!exist) {
-        fprintf(stderr, "ERROR: File does not exits\n");
-        return -1;
     }
 
     strncpy(fd_table[fd_open_count].filename, filename, strlen(filename));
@@ -385,32 +382,34 @@ int fs_open(const char *filename) {
     return fd_open_count - 1;
 }
 
-int isValidFD(int fd){
-    if(file_system == NULL) {
+bool isValidFD(int fd){
+    if (file_system == NULL) {
         fprintf(stderr, "No file system mounted\n");
-        return -1;
+        return false;
     }
 
-    if (fd < 0 || fd >= FILE_DESCRIPTOR_TABLE_SIZE) {
+    if ((fd < 0) || (fd >= FILE_DESCRIPTOR_TABLE_SIZE)) {
         fprintf(stderr, "Invalid file descriptor\n");
-        return -1;
+        return false;
     }
 
     if (strlen(fd_table[fd].filename) == 0) {
         fprintf(stderr, "Current file descriptor was not opened\n");
-        return -1;
+        return false;
     }
 
-    return 0;
+    return true;
 }
 
 int fs_close(int fd) {
     /* TODO: Phase 3 */
-    //free(file_system);
-    int isValid = !isvalidFD(fd);
+    bool isValid = isvalidFD(fd);
 
-    if(!isValid) return -1;
+    if (!isValid){
+        return -1;
+    }
 
+    // memset() - Copies an unsigned char to the first n characters of a string
     memset(fd_table[fd].filename, 0, sizeof(char));
     fd_table[fd].offset = 0;
 
